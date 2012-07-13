@@ -395,7 +395,11 @@ class ActivityChooserView extends ViewGroup implements ActivityChooserModelClien
         super.onAttachedToWindow();
         ActivityChooserModel dataModel = mAdapter.getDataModel();
         if (dataModel != null) {
-            dataModel.registerObserver(mModelDataSetOberver);
+        	try {
+        		dataModel.registerObserver(mModelDataSetOberver);
+        	} catch (IllegalStateException e) {
+        		;
+        	}
         }
         mIsAttachedToWindow = true;
     }
@@ -405,7 +409,11 @@ class ActivityChooserView extends ViewGroup implements ActivityChooserModelClien
         super.onDetachedFromWindow();
         ActivityChooserModel dataModel = mAdapter.getDataModel();
         if (dataModel != null) {
-            dataModel.unregisterObserver(mModelDataSetOberver);
+        	try {
+        		dataModel.unregisterObserver(mModelDataSetOberver);
+        	} catch (Exception e) {
+        		;
+        	}
         }
         ViewTreeObserver viewTreeObserver = getViewTreeObserver();
         if (viewTreeObserver.isAlive()) {
@@ -420,10 +428,10 @@ class ActivityChooserView extends ViewGroup implements ActivityChooserModelClien
         // If the default action is not visible we want to be as tall as the
         // ActionBar so if this widget is used in the latter it will look as
         // a normal action button.
-        if (mDefaultActivityButton.getVisibility() != VISIBLE) {
-            heightMeasureSpec = MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(heightMeasureSpec),
-                    MeasureSpec.EXACTLY);
-        }
+//        if (mDefaultActivityButton.getVisibility() != VISIBLE) {
+//            heightMeasureSpec = MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(heightMeasureSpec),
+//                    MeasureSpec.EXACTLY);
+//        }
         measureChild(child, widthMeasureSpec, heightMeasureSpec);
         setMeasuredDimension(child.getMeasuredWidth(), child.getMeasuredHeight());
     }
