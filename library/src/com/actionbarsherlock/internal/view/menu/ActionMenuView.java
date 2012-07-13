@@ -17,23 +17,27 @@ package com.actionbarsherlock.internal.view.menu;
 
 import android.content.Context;
 import android.content.res.Configuration;
+import android.content.res.TypedArray;
 import android.graphics.Canvas;
 import android.os.Build;
 import android.util.AttributeSet;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewDebug;
 import android.view.ViewGroup;
 import android.view.accessibility.AccessibilityEvent;
 import android.widget.LinearLayout;
+
+import com.actionbarsherlock.R;
 import com.actionbarsherlock.internal.widget.IcsLinearLayout;
+
 
 /**
  * @hide
  */
 public class ActionMenuView extends IcsLinearLayout implements MenuBuilder.ItemInvoker, MenuView {
     //UNUSED private static final String TAG = "ActionMenuView";
-    private static final boolean IS_FROYO = Build.VERSION.SDK_INT >= Build.VERSION_CODES.FROYO;
-
+    private static final boolean IS_FROYO = Build.VERSION.SDK_INT >= Build.VERSION_CODES.FROYO;   
     static final int MIN_CELL_SIZE = 56; // dips
     static final int GENERATED_ITEM_PADDING = 4; // dips
 
@@ -46,19 +50,25 @@ public class ActionMenuView extends IcsLinearLayout implements MenuBuilder.ItemI
     private int mMinCellSize;
     private int mGeneratedItemPadding;
     //UNUSED private int mMeasuredExtraWidth;
-
-    private boolean mFirst = true;
+    private int mMaxItemHeight;
+    
+    private boolean mFirst;
 
     public ActionMenuView(Context context) {
         this(context, null);
     }
-
+   
     public ActionMenuView(Context context, AttributeSet attrs) {
         super(context, attrs);
         setBaselineAligned(false);
         final float density = context.getResources().getDisplayMetrics().density;
         mMinCellSize = (int) (MIN_CELL_SIZE * density);
         mGeneratedItemPadding = (int) (GENERATED_ITEM_PADDING * density);
+
+        TypedArray a = context.obtainStyledAttributes(attrs, R.styleable.SherlockActionBar,
+                R.attr.actionBarStyle, 0);
+        mMaxItemHeight = a.getDimensionPixelSize(R.styleable.SherlockActionBar_height, 0);
+        a.recycle();
     }
 
     public void setPresenter(ActionMenuPresenter presenter) {
@@ -81,7 +91,7 @@ public class ActionMenuView extends IcsLinearLayout implements MenuBuilder.ItemI
             mPresenter.showOverflowMenu();
         }
     }
-
+    
     @Override
     protected void onDraw(Canvas canvas) {
         //Need to trigger a relayout since we may have been added extremely
@@ -94,7 +104,7 @@ public class ActionMenuView extends IcsLinearLayout implements MenuBuilder.ItemI
         }
         super.onDraw(canvas);
     }
-
+    
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
         // If we've been given an exact size to match, apply special formatting during layout.
@@ -116,6 +126,13 @@ public class ActionMenuView extends IcsLinearLayout implements MenuBuilder.ItemI
         if (mFormatItems) {
             onMeasureExactFormat(widthMeasureSpec, heightMeasureSpec);
         } else {
+            // Previous measurement at exact format may have set margins - reset them.
+            final int childCount = getChildCount();
+            for (int i = 0; i < childCount; i++) {
+                final View child = getChildAt(i);
+                final LayoutParams lp = (LayoutParams) child.getLayoutParams();
+                lp.leftMargin = lp.rightMargin = 0;
+            }
             super.onMeasure(widthMeasureSpec, heightMeasureSpec);
         }
     }
@@ -128,6 +145,11 @@ public class ActionMenuView extends IcsLinearLayout implements MenuBuilder.ItemI
 
         final int widthPadding = getPaddingLeft() + getPaddingRight();
         final int heightPadding = getPaddingTop() + getPaddingBottom();
+
+        final int itemHeightSpec = heightMode == MeasureSpec.EXACTLY
+                ? MeasureSpec.makeMeasureSpec(heightSize - heightPadding, MeasureSpec.EXACTLY)
+                : MeasureSpec.makeMeasureSpec(
+                    Math.min(mMaxItemHeight, heightSize - heightPadding), MeasureSpec.AT_MOST);
 
         widthSize -= widthPadding;
 
@@ -180,7 +202,7 @@ public class ActionMenuView extends IcsLinearLayout implements MenuBuilder.ItemI
             final int cellsAvailable = lp.isOverflowButton ? 1 : cellsRemaining;
 
             final int cellsUsed = measureChildForCells(child, cellSize, cellsAvailable,
-                    heightMeasureSpec, heightPadding);
+                    itemHeightSpec, heightPadding);
 
             maxCellsUsed = Math.max(maxCellsUsed, cellsUsed);
             if (lp.expandable) expandableItemCount++;
@@ -311,7 +333,6 @@ public class ActionMenuView extends IcsLinearLayout implements MenuBuilder.ItemI
 
         // Remeasure any items that have had extra space allocated to them.
         if (needsExpansion) {
-            int heightSpec = MeasureSpec.makeMeasureSpec(heightSize - heightPadding, heightMode);
             for (int i = 0; i < childCount; i++) {
                 final View child = getChildAt(i);
                 final LayoutParams lp = (LayoutParams) child.getLayoutParams();
@@ -319,7 +340,8 @@ public class ActionMenuView extends IcsLinearLayout implements MenuBuilder.ItemI
                 if (!lp.expanded) continue;
 
                 final int width = lp.cellsUsed * cellSize + lp.extraPixels;
-                child.measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), heightSpec);
+                child.measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+                        itemHeightSpec);
             }
         }
 
@@ -328,7 +350,6 @@ public class ActionMenuView extends IcsLinearLayout implements MenuBuilder.ItemI
         }
 
         setMeasuredDimension(widthSize, heightSize);
-        //UNUSED mMeasuredExtraWidth = cellsRemaining * cellSize;
     }
 
     /**
@@ -353,8 +374,12 @@ public class ActionMenuView extends IcsLinearLayout implements MenuBuilder.ItemI
         final int childHeightMode = MeasureSpec.getMode(parentHeightMeasureSpec);
         final int childHeightSpec = MeasureSpec.makeMeasureSpec(childHeightSize, childHeightMode);
 
+        final ActionMenuItemView itemView = child instanceof ActionMenuItemView ?
+                (ActionMenuItemView) child : null;
+        final boolean hasText = itemView != null && itemView.hasText();
+
         int cellsUsed = 0;
-        if (cellsRemaining > 0) {
+        if (cellsRemaining > 0 && (!hasText || cellsRemaining >= 2)) {
             final int childWidthSpec = MeasureSpec.makeMeasureSpec(
                     cellSize * cellsRemaining, MeasureSpec.AT_MOST);
             child.measure(childWidthSpec, childHeightSpec);
@@ -362,11 +387,10 @@ public class ActionMenuView extends IcsLinearLayout implements MenuBuilder.ItemI
             final int measuredWidth = child.getMeasuredWidth();
             cellsUsed = measuredWidth / cellSize;
             if (measuredWidth % cellSize != 0) cellsUsed++;
+            if (hasText && cellsUsed < 2) cellsUsed = 2;
         }
 
-        final ActionMenuItemView itemView = child instanceof ActionMenuItemView ?
-                (ActionMenuItemView) child : null;
-        final boolean expandable = !lp.isOverflowButton && itemView != null && itemView.hasText();
+        final boolean expandable = !lp.isOverflowButton && hasText;
         lp.expandable = expandable;
 
         lp.cellsUsed = cellsUsed;
@@ -385,9 +409,9 @@ public class ActionMenuView extends IcsLinearLayout implements MenuBuilder.ItemI
 
         final int childCount = getChildCount();
         final int midVertical = (top + bottom) / 2;
-        final int dividerWidth = 0;//getDividerWidth();
+        final int dividerWidth = getDividerWidth();
         int overflowWidth = 0;
-        //UNUSED int nonOverflowWidth = 0;
+        int nonOverflowWidth = 0;
         int nonOverflowCount = 0;
         int widthRemaining = right - left - getPaddingRight() - getPaddingLeft();
         boolean hasOverflow = false;
@@ -415,11 +439,11 @@ public class ActionMenuView extends IcsLinearLayout implements MenuBuilder.ItemI
                 hasOverflow = true;
             } else {
                 final int size = v.getMeasuredWidth() + p.leftMargin + p.rightMargin;
-                //UNUSED nonOverflowWidth += size;
+                nonOverflowWidth += size;
                 widthRemaining -= size;
-                //if (hasDividerBeforeChildAt(i)) {
-                    //UNUSED nonOverflowWidth += dividerWidth;
-                //}
+                if (hasDividerBeforeChildAt(i)) {
+                    nonOverflowWidth += dividerWidth;
+                }
                 nonOverflowCount++;
             }
         }
@@ -465,7 +489,7 @@ public class ActionMenuView extends IcsLinearLayout implements MenuBuilder.ItemI
     public boolean isOverflowReserved() {
         return mReserveOverflow;
     }
-
+   
     public void setOverflowReserved(boolean reserveOverflow) {
         mReserveOverflow = reserveOverflow;
     }
@@ -477,7 +501,7 @@ public class ActionMenuView extends IcsLinearLayout implements MenuBuilder.ItemI
         params.gravity = Gravity.CENTER_VERTICAL;
         return params;
     }
-
+   
     @Override
     public LayoutParams generateLayoutParams(AttributeSet attrs) {
         return new LayoutParams(getContext(), attrs);
@@ -518,7 +542,7 @@ public class ActionMenuView extends IcsLinearLayout implements MenuBuilder.ItemI
         mMenu = menu;
     }
 
-    //@Override
+    @Override
     protected boolean hasDividerBeforeChildAt(int childIndex) {
         final View childBefore = getChildAt(childIndex - 1);
         final View child = getChildAt(childIndex);
@@ -542,10 +566,15 @@ public class ActionMenuView extends IcsLinearLayout implements MenuBuilder.ItemI
     }
 
     public static class LayoutParams extends LinearLayout.LayoutParams {
+        @ViewDebug.ExportedProperty(category = "layout")
         public boolean isOverflowButton;
+        @ViewDebug.ExportedProperty(category = "layout")
         public int cellsUsed;
+        @ViewDebug.ExportedProperty(category = "layout")
         public int extraPixels;
+        @ViewDebug.ExportedProperty(category = "layout")
         public boolean expandable;
+        @ViewDebug.ExportedProperty(category = "layout")
         public boolean preventEdgeOffset;
 
         public boolean expanded;
